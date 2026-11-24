@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase";
 
-export function AuthGate({ children }: { children: React.ReactNode }) {
+export function AuthGate({ children }: { children: (session: Session) => React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -51,17 +51,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (loading) return <div className="empty-state" role="status">Connecting to your account…</div>;
-  if (session) return <>{children}<button className="btn" onClick={async () => { await getSupabase().auth.signOut(); }}>Sign out</button></>;
-  return <main className="content" style={{ maxWidth: 480, margin: "10vh auto" }}>
-    <section className="search-panel">
-      <h1>LEAD HUNTER AI</h1><p className="page-subtitle">{creating ? "Create your account" : "Sign in to your account"}</p>
-      <form onSubmit={submit} style={{ marginTop: 24 }}>
-        <div className="form-group"><label className="form-label" htmlFor="auth-email">Email</label><input id="auth-email" className="field" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></div>
-        <div className="form-group"><label className="form-label" htmlFor="auth-password">Password</label><input id="auth-password" className="field" type="password" autoComplete={creating ? "new-password" : "current-password"} required minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} /></div>
-        <button className="btn btn-primary" type="submit" disabled={busy || !configured}>{busy ? "Please wait…" : creating ? "Sign up" : "Sign in"}</button>
-      </form>
-      {message && <div className="notice-box" role="alert">{message}</div>}
-      <button className="text-link" style={{ marginTop: 16 }} onClick={() => { setCreating(!creating); setMessage(""); }}>{creating ? "Already have an account? Sign in" : "Create an account"}</button>
-    </section>
-  </main>;
+  if (session) return <>{children(session)}</>;
+  return <main className="content" style={{ maxWidth: 480, margin: "10vh auto" }}><section className="search-panel"><h1>LEAD HUNTER AI</h1><p className="page-subtitle">{creating ? "Create your account" : "Sign in to your account"}</p><form onSubmit={submit} style={{ marginTop: 24 }}><div className="form-group"><label className="form-label" htmlFor="auth-email">Email</label><input id="auth-email" className="field" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></div><div className="form-group"><label className="form-label" htmlFor="auth-password">Password</label><input id="auth-password" className="field" type="password" autoComplete={creating ? "new-password" : "current-password"} required minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} /></div><button className="btn btn-primary" type="submit" disabled={busy || !configured}>{busy ? "Please wait…" : creating ? "Sign up" : "Sign in"}</button></form>{message && <div className="notice-box" role="alert">{message}</div>}<button className="text-link" style={{ marginTop: 16 }} onClick={() => { setCreating(!creating); setMessage(""); }}>{creating ? "Already have an account? Sign in" : "Create an account"}</button></section></main>;
 }
