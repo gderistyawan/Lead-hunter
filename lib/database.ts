@@ -48,7 +48,7 @@ export async function saveSearch(input: SearchInput, name?: string) {
   const { data: { user }, error: authError } = await getSupabase().auth.getUser();
   throwIfError(authError);
   if (!user) throw new Error("Sign in to save a search.");
-  const { data, error } = await getSupabase().from("saved_searches").insert({ user_id: user.id, name: name ?? input.query || input.industry || input.location, filters: input }).select().single();
+  const { data, error } = await getSupabase().from("saved_searches").insert({ user_id: user.id, name: name ?? (input.query || input.industry || input.location), filters: input }).select().single();
   throwIfError(error);
   return data;
 }

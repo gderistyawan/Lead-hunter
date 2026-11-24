@@ -40,7 +40,21 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .breadcrumb strong { color: #34495c; font-weight: 600; }
 .topbar-actions { gap: 10px; }
 .icon-button { position: relative; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid #e8edf0; border-radius: 10px; color: #627588; background: white; }
-.notification-dot { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: #ef8267; border: 1px solid white; }
+.notification-menu { position: relative; }
+.notification-count { position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; padding: 0 4px; display: grid; place-items: center; border: 1px solid white; border-radius: 9px; color: white; background: #ef8267; font-size: 9px; font-weight: 700; }
+.notification-dropdown { position: absolute; top: calc(100% + 10px); right: 0; z-index: 40; width: min(360px, calc(100vw - 30px)); overflow: hidden; border: 1px solid #e8edf0; border-radius: 12px; background: white; box-shadow: 0 12px 34px #142c3d20; }
+.notification-heading { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid #edf1f3; color: #34495c; font-size: 12px; }
+.notification-heading span { color: #84939f; font-size: 10px; font-weight: 400; }
+.notification-message { margin: 0; padding: 20px 16px; color: #84939f; font-size: 11px; line-height: 1.5; text-align: center; }
+.notification-list { max-height: min(430px, calc(100vh - 120px)); margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.notification-item { display: flex; align-items: flex-start; gap: 10px; padding: 13px 14px; border-bottom: 1px solid #f0f3f4; }
+.notification-item:last-child { border-bottom: 0; }
+.activity-indicator { width: 7px; height: 7px; margin-top: 5px; flex: 0 0 auto; border-radius: 50%; background: #ef8267; }
+.notification-item.read .activity-indicator { background: #d3dcdf; }
+.activity-copy { min-width: 0; flex: 1; display: grid; gap: 4px; color: #536979; font-size: 11px; }
+.activity-copy strong { overflow: hidden; color: #34495c; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.activity-copy > span, .activity-copy time { overflow: hidden; color: #84939f; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.mark-read-button { padding: 0; border: 0; color: #168b79; background: transparent; font-size: 10px; white-space: nowrap; cursor: pointer; }
 .top-avatar { width: 33px; height: 33px; display: grid; place-items: center; border-radius: 50%; color: #196e65; background: #dff4ef; font-size: 11px; font-weight: 750; }
 .content { max-width: 1510px; margin: auto; padding: 30px 34px 46px; }
 .page-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 23px; }

@@ -1,13 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { Bell, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Database, LayoutDashboard, Menu, Search, Settings, ShieldCheck, Sparkles, Target, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { DashboardView } from "@/components/dashboard-view";
 import { LeadDatabaseView } from "@/components/lead-database-view";
 import { SearchCenterView } from "@/components/search-center-view";
+import { listSearchHistory } from "@/lib/database";
 import type { AppPage } from "@/lib/types";
+
+type SearchActivity = {
+  id: string;
+  query?: string | null;
+  industry?: string | null;
+  location?: string | null;
+  created_at: string;
+};
 
 const navigation: { name: AppPage; icon: LucideIcon }[] = [
   { name: "Dashboard", icon: LayoutDashboard },
@@ -35,10 +44,84 @@ export function AppShell({ session }: { session: Session }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [activities, setActivities] = useState<SearchActivity[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [notificationError, setNotificationError] = useState("");
+  const [readStatus, setReadStatus] = useState<{ userId: string; ids: string[] } | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationMenuRef = useRef<HTMLDivElement>(null);
   const displayName = getDisplayName(session);
   const initials = getInitials(displayName);
+  const readStatusKey = `lead-hunter:read-search-activities:${session.user.id}`;
   const navigate = (next: AppPage) => { setPage(next); setMobileOpen(false); };
   const showToast = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 3200); };
+  const readActivityIds = readStatus?.userId === session.user.id ? readStatus.ids : [];
+  const unreadCount = activities.filter((activity) => !readActivityIds.includes(activity.id)).length;
+
+  useEffect(() => {
+    let active = true;
+    setActivities([]);
+    setActivityLoading(true);
+    setNotificationError("");
+
+    try {
+      const saved = window.localStorage.getItem(readStatusKey);
+      const ids: unknown = saved ? JSON.parse(saved) : [];
+      if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) {
+        throw new Error("Saved notification status is invalid.");
+      }
+      setReadStatus({ userId: session.user.id, ids });
+    } catch (error) {
+      setReadStatus({ userId: session.user.id, ids: [] });
+      setNotificationError(error instanceof Error ? error.message : "Unable to load saved notification status.");
+    }
+
+    void listSearchHistory()
+      .then((history) => {
+        if (active) setActivities(history);
+      })
+      .catch((error: unknown) => {
+        if (active) setNotificationError(error instanceof Error ? error.message : "Unable to load search activity.");
+      })
+      .finally(() => {
+        if (active) setActivityLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [readStatusKey, session.user.id]);
+
+  useEffect(() => {
+    if (readStatus?.userId !== session.user.id) return;
+    try {
+      window.localStorage.setItem(readStatusKey, JSON.stringify(readStatus.ids));
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Unable to save notification status.");
+    }
+  }, [readStatus, readStatusKey, session.user.id]);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !notificationMenuRef.current?.contains(event.target)) {
+        setNotificationsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNotificationsOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [notificationsOpen]);
+
+  const markActivityRead = (id: string) => {
+    setReadStatus((current) => current?.userId === session.user.id && !current.ids.includes(id)
+      ? { ...current, ids: [...current.ids, id] }
+      : current);
+  };
 
   return <div className="app-shell">
     {mobileOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
@@ -48,7 +131,11 @@ export function AppShell({ session }: { session: Session }) {
       <div className="nav-label">WORKSPACE</div><nav className="nav-list" aria-label="Main navigation">{navigation.map(({ name, icon: Icon }) => <button key={name} className={`nav-item ${page === name ? "active" : ""}`} onClick={() => navigate(name)} title={collapsed ? name : undefined} aria-current={page === name ? "page" : undefined}><Icon size={17} strokeWidth={1.8} /><span>{name}</span></button>)}</nav>
       <div className="sidebar-bottom"><div className="workspace-card"><span className="workspace-avatar">{initials}</span><span className="workspace-copy">{displayName}<small>Free workspace</small></span><ChevronDown size={13} style={{ marginLeft: "auto", color: "#8195a5" }} /></div><div className="sidebar-footnote">LEAD HUNTER AI · PREVIEW</div></div>
     </aside>
-    <div className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={19} /></button><div className="breadcrumb">Workspace <span style={{ margin: "0 7px", color: "#c2ccd2" }}>/</span> <strong>{page}</strong></div></div><div className="topbar-actions"><button className="icon-button" aria-label="Help" onClick={() => showToast("Help center will be available in a future release.")}><CircleHelp size={16} /></button><button className="icon-button" aria-label="Notifications" onClick={() => showToast("You’re all caught up — this demo has no live notifications.")}><Bell size={16} /><span className="notification-dot" /></button><span className="top-avatar" title={displayName}>{initials}</span></div></header>
+    <div className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={19} /></button><div className="breadcrumb">Workspace <span style={{ margin: "0 7px", color: "#c2ccd2" }}>/</span> <strong>{page}</strong></div></div><div className="topbar-actions"><button className="icon-button" aria-label="Help" onClick={() => showToast("Help center will be available in a future release.")}><CircleHelp size={16} /></button><div className="notification-menu" ref={notificationMenuRef}><button className="icon-button" aria-label={`Notifications, ${unreadCount} unread`} aria-expanded={notificationsOpen} aria-controls="notification-dropdown" onClick={() => setNotificationsOpen((open) => !open)}><Bell size={16} />{unreadCount > 0 && <span className="notification-count">{unreadCount > 99 ? "99+" : unreadCount}</span>}</button>{notificationsOpen && <section className="notification-dropdown" id="notification-dropdown" aria-label="Search activity"><div className="notification-heading"><strong>Search activity</strong><span>{unreadCount} unread</span></div>{notificationError && <p className="notification-message" role="alert">{notificationError}</p>}{activityLoading ? <p className="notification-message">Loading activity…</p> : activities.length === 0 ? <p className="notification-message">No search activity yet.</p> : <ul className="notification-list">{activities.map((activity) => {
+        const isRead = readActivityIds.includes(activity.id);
+        const details = [activity.query, activity.industry, activity.location].filter((value): value is string => Boolean(value?.trim()));
+        return <li className={`notification-item ${isRead ? "read" : "unread"}`} key={activity.id}><span className="activity-indicator" aria-hidden="true" /><div className="activity-copy"><strong>{activity.query?.trim() || activity.industry?.trim() || activity.location?.trim() || "Search activity"}</strong>{details.length > 1 && <span>{details.join(" · ")}</span>}<time dateTime={activity.created_at}>{new Date(activity.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time></div>{!isRead && <button className="mark-read-button" onClick={() => markActivityRead(activity.id)}>Mark read</button>}</li>;
+      })}</ul>}</section>}</div><span className="top-avatar" title={displayName}>{initials}</span></div></header>
       <main className="content">{page === "Dashboard" ? <DashboardView onNavigate={navigate} displayName={displayName} /> : page === "Search Center" ? <SearchCenterView /> : page === "Lead Database" ? <LeadDatabaseView /> : page === "Search History" ? <HistoryView /> : <SettingsView onToast={showToast} />}</main>
     </div>
     {toast && <div className="toast" role="status"><Sparkles size={15} />{toast}<button aria-label="Dismiss message" onClick={() => setToast("")} style={{ marginLeft: 6, border: 0, background: "transparent", color: "#81918d" }}><X size={14} /></button></div>}

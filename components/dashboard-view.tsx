@@ -9,6 +9,7 @@ export function DashboardView({ onNavigate, displayName }: { onNavigate: (page: 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [searchCount, setSearchCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [greeting, setGreeting] = useState("");
 
   useEffect(() => {
     Promise.all([listLeads(), listSearchHistory()])
@@ -17,6 +18,16 @@ export function DashboardView({ onNavigate, displayName }: { onNavigate: (page: 
         setSearchCount(history.length);
       })
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    const updateGreeting = () => {
+      const hour = new Date().getHours();
+      setGreeting(hour >= 5 && hour < 11 ? "Good Morning" : hour >= 11 && hour < 18 ? "Good Afternoon" : "Good Evening");
+    };
+    updateGreeting();
+    const interval = window.setInterval(updateGreeting, 60_000);
+    return () => window.clearInterval(interval);
   }, []);
 
   const hotLeads = leads.filter((lead) => lead.temperature === "HOT").length;
@@ -31,7 +42,7 @@ export function DashboardView({ onNavigate, displayName }: { onNavigate: (page: 
     .sort((a, b) => b[1] - a[1]);
 
   return <>
-    <div className="page-heading"><div><div className="eyebrow">YOUR SALES OVERVIEW</div><h1>{displayName} <span aria-hidden="true">☀️</span></h1><p className="page-subtitle">Here’s what’s happening with your leads today.</p></div></div>
+    <div className="page-heading"><div><div className="eyebrow">YOUR SALES OVERVIEW</div><h1>{greeting && `${greeting}, `}{displayName} <span aria-hidden="true">☀️</span></h1><p className="page-subtitle">Here’s what’s happening with your leads today.</p></div></div>
     <section className="stats-grid" aria-label="Lead metrics">{stats.map(({ label, value, note, icon: Icon, tone, color }) => <article className="stat-card" key={label}><div className="stat-top"><span>{label}</span><span className="stat-icon" style={{ background: tone, color }}><Icon size={16} /></span></div><div className="stat-value">{value}</div><div className="stat-bottom"><span>{note}</span></div></article>)}</section>
     <div className="dashboard-grid">
       <section className="panel"><div className="panel-heading"><div><div className="panel-title">Lead distribution by industry</div><div className="panel-description">Your lead database, by sector</div></div></div>
