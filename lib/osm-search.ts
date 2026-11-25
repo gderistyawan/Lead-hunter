@@ -123,6 +123,9 @@ const generalSelectors = [
   '["building"~"commercial|retail|industrial|warehouse|hotel",i]',
 ];
 
+/**
+ * Escape text before inserting it into an Overpass regular expression.
+ */
 function escapeOverpass(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -138,9 +141,7 @@ function termsFor(input: {
     .filter(
       (term) =>
         term.length > 2 &&
-        !/^(the|and|for|near|with|business|businesses|in|of)$/i.test(
-          term
-        )
+        !/^(the|and|for|near|with|business|businesses|in|of)$/i.test(term)
     );
 }
 
@@ -150,7 +151,8 @@ function areaSearchName(location: string): string {
     .map((part) => part.trim())
     .filter(Boolean);
 
-  const countryNames = /^(indonesia|id|usa|united states|uk|united kingdom)$/i;
+  const countryNames =
+    /^(indonesia|id|usa|united states|uk|united kingdom)$/i;
 
   return (
     [...tokens].reverse().find((part) => !countryNames.test(part)) ??
@@ -177,7 +179,7 @@ function buildQuery(
     ? matched.flatMap(({ selectors: choices }) => choices)
     : generalSelectors;
 
-  // Escape individual terms while preserving the OR separator.
+  // Escape each term separately so the | remains an OR operator.
   const namePattern = terms.map(escapeOverpass).join("|");
 
   const nameSelector = namePattern
@@ -188,8 +190,8 @@ function buildQuery(
     .map((selector) => `nwr(area.searchArea)["name"]${selector};`)
     .join("\n  ");
 
-  const limit = Math.min(
-    Math.max(maxResults * 5, maxResults),
+  const resultLimit = Math.min(
+    Math.max(Math.floor(maxResults * 5), maxResults),
     500
   );
 
@@ -200,7 +202,7 @@ area["name"~"^${areaName}$",i]["boundary"="administrative"]->.searchArea;
   ${businessSelectors}
   ${nameSelector}
 );
-out center tags ${limit};
+out center tags ${resultLimit};
 `.trim();
 }
 
@@ -210,7 +212,9 @@ function addressFromTags(
 ): string {
   const full = tags["addr:full"];
 
-  if (full) return full;
+  if (full) {
+    return full;
+  }
 
   const street = [
     tags["addr:housenumber"],
@@ -247,7 +251,7 @@ function categoryFromTags(
     "leisure",
   ]) {
     if (tags[key]) {
-      return tags[key].replaceAll("_", " ");
+      return tags[key].replace(/_/g, " ");
     }
   }
 
@@ -263,7 +267,9 @@ function hasRequestedCategory(
 ): boolean {
   const terms = termsFor(input);
 
-  if (terms.length === 0) return true;
+  if (terms.length === 0) {
+    return true;
+  }
 
   const pattern = tagPatterns.find(({ pattern }) =>
     pattern.test(terms.join(" "))
@@ -275,16 +281,14 @@ function hasRequestedCategory(
         pattern.pattern.test(`${key} ${value}`)
       ) ||
       terms.some((term) =>
-        tags.name?.toLowerCase().includes(term.toLowerCase())
+        (tags.name ?? "").toLowerCase().includes(term.toLowerCase())
       )
     );
   }
 
   const searchable = [
     tags.name ?? "",
-    ...Object.entries(tags).map(
-      ([key, value]) => `${key} ${value}`
-    ),
+    ...Object.entries(tags).map(([key, value]) => `${key} ${value}`),
   ]
     .join(" ")
     .toLowerCase();
@@ -305,7 +309,9 @@ function normalize(
   const tags = element.tags ?? {};
   const name = tags.name?.trim();
 
-  if (!name) return null;
+  if (!name) {
+    return null;
+  }
 
   const latitude = element.lat ?? element.center?.lat;
   const longitude = element.lon ?? element.center?.lon;
@@ -326,7 +332,6 @@ function normalize(
     tags["phone:mobile"] ||
     undefined;
 
-  // Read email from actual OpenStreetMap contact tags.
   const email =
     tags.email ||
     tags["contact:email"] ||
@@ -379,9 +384,11 @@ function normalize(
     osmId: element.id,
     latitude,
     longitude,
+
     website,
     phone,
     email,
+
     sourceUrl,
     discoveryMethod: "OpenStreetMap Overpass",
     rawTags: tags,
@@ -469,15 +476,19 @@ export async function searchOpenStreetMap(input: {
     industry: input.industry.trim(),
   };
 
-  const safeMaxResults = Math.min(
+  const requestedLimit = Number.isFinite(input.maxResults)
+    ? Math.floor(input.maxResults)
+    : 20;
+
+  const maxResults = Math.min(
     100,
-    Math.max(1, Math.floor(input.maxResults || 20))
+    Math.max(1, requestedLimit)
   );
 
   const cacheKey = JSON.stringify([
     location.toLowerCase(),
     normalizedInput,
-    safeMaxResults,
+    maxResults,
   ]);
 
   const cached = cache.get(cacheKey);
@@ -489,16 +500,14 @@ export async function searchOpenStreetMap(input: {
   const query = buildQuery(
     location,
     normalizedInput,
-    safeMaxResults
+    maxResults
   );
 
   const controller = new AbortController();
 
-  // Use global timers so this also works outside the browser.
-  const timeout = setTimeout(
-    () => controller.abort(),
-    REQUEST_TIMEOUT_MS
-  );
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
 
   try {
     const response = await requestOverpass(
@@ -525,18 +534,18 @@ export async function searchOpenStreetMap(input: {
         normalizedInput
       );
 
-      if (
-        lead &&
-        !unique.has(`${element.type}/${element.id}`)
-      ) {
-        unique.set(`${element.type}/${element.id}`, lead);
+      if (!lead) {
+        continue;
+      }
+
+      const uniqueKey = `${element.type}/${element.id}`;
+
+      if (!unique.has(uniqueKey)) {
+        unique.set(uniqueKey, lead);
       }
     }
 
-    const results = [...unique.values()].slice(
-      0,
-      safeMaxResults
-    );
+    const results = [...unique.values()].slice(0, maxResults);
 
     cache.set(cacheKey, {
       expiresAt: Date.now() + CACHE_TTL_MS,
@@ -591,9 +600,11 @@ export function osmErrorMessage(
     },
   } as const;
 
+  const languageMessages = messages[language];
+
   return (
-    messages[language][
-      code as keyof typeof messages.en
+    languageMessages[
+      code as keyof typeof languageMessages
     ] ??
     (language === "id"
       ? "Pencarian gagal. Silakan coba lagi."
