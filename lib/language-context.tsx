@@ -6,6 +6,11 @@ import { translations } from "@/lib/i18n";
 
 export type Language = "en" | "id";
 const STORAGE_KEY = "lead-hunter:language";
+// Keep source strings across language changes so an Indonesian view can always
+// be translated back to its original English text.
+const originalText = new WeakMap<Text, string>();
+const originalAttributes = new WeakMap<Element, Map<string, string>>();
+const attributes = ["aria-label", "aria-description", "placeholder", "title", "data-tooltip"];
 
 type LanguageContextValue = {
   language: Language;
@@ -17,13 +22,13 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 function translateDom(root: ParentNode, language: Language) {
   const dictionary = translations[language] as Record<string, string>;
-  const originalText = new WeakMap<Text, string>();
-  const originalAttributes = new WeakMap<Element, Map<string, string>>();
-  const attributes = ["aria-label", "aria-description", "placeholder", "title", "data-tooltip"];
 
   const translateText = (node: Text) => {
     const source = originalText.get(node) ?? node.nodeValue ?? "";
     if (!originalText.has(node)) originalText.set(node, source);
+    // Customer-managed data (lead names, contacts, locations and industry
+    // values) is content, not UI copy, so never run it through the dictionary.
+    if (node.parentElement?.closest("td, .industry-row, [data-no-translate]")) return;
     let result = source;
     for (const [english, translated] of Object.entries(dictionary)) {
       if (english && result.includes(english)) result = result.split(english).join(translated);
@@ -32,6 +37,7 @@ function translateDom(root: ParentNode, language: Language) {
   };
 
   const translateElement = (element: Element) => {
+    if (element.closest("[data-no-translate]") || element.matches("input, textarea, select")) return;
     const saved = originalAttributes.get(element) ?? new Map<string, string>();
     for (const attribute of attributes) {
       const current = element.getAttribute(attribute);
