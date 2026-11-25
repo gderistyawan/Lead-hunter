@@ -1,57 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowUpRight, Building2, ChevronRight, Flame, Globe2, Search, ShieldCheck, Sparkles, Users } from "lucide-react";
+import { ArrowUpRight, Building2, Clock3, Flame, Globe2, Search, Sparkles, Users } from "lucide-react";
 import { listLeads, listSearchHistory } from "@/lib/database";
-import type { AppPage, Lead } from "@/lib/types";
+import { LEAD_STATUSES, type AppPage, type Lead } from "@/lib/types";
 
+type Activity = { id: string; query?: string | null; industry?: string | null; location?: string | null; created_at?: string | null };
 export function DashboardView({ onNavigate, displayName }: { onNavigate: (page: AppPage) => void; displayName: string }) {
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [searchCount, setSearchCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [greeting, setGreeting] = useState("");
-
-  useEffect(() => {
-    Promise.all([listLeads(), listSearchHistory()])
-      .then(([databaseLeads, history]) => {
-        setLeads(databaseLeads);
-        setSearchCount(history.length);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    const updateGreeting = () => {
-      const hour = new Date().getHours();
-      setGreeting(hour >= 5 && hour < 11 ? "Good Morning" : hour >= 11 && hour < 18 ? "Good Afternoon" : "Good Evening");
-    };
-    updateGreeting();
-    const interval = window.setInterval(updateGreeting, 60_000);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  const hotLeads = leads.filter((lead) => lead.temperature === "HOT").length;
-  const stats = [
-    { label: "Total leads", value: loading ? "…" : String(leads.length), note: "in your database", icon: Users, tone: "#e8f6f2", color: "#158e7a" },
-    { label: "New leads", value: loading ? "…" : String(leads.filter((lead) => lead.status === "New").length), note: "available to contact", icon: Sparkles, tone: "#eef3ff", color: "#5c78ca" },
-    { label: "Hot leads", value: loading ? "…" : String(hotLeads), note: "need your attention", icon: Flame, tone: "#fff1eb", color: "#dc7957" },
-    { label: "Search activities", value: loading ? "…" : String(searchCount), note: "searches recorded", icon: Search, tone: "#f4efff", color: "#8d70c8" },
-  ];
-
-  const industryCounts = Array.from(new Map(leads.map((lead) => [lead.industry, (leads.filter((item) => item.industry === lead.industry).length)])).entries())
-    .sort((a, b) => b[1] - a[1]);
-
-  return <>
-    <div className="page-heading"><div><div className="eyebrow">YOUR SALES OVERVIEW</div><h1>{greeting && `${greeting}, `}{displayName} <span aria-hidden="true">☀️</span></h1><p className="page-subtitle">Here’s what’s happening with your leads today.</p></div></div>
-    <section className="stats-grid" aria-label="Lead metrics">{stats.map(({ label, value, note, icon: Icon, tone, color }) => <article className="stat-card" key={label}><div className="stat-top"><span>{label}</span><span className="stat-icon" style={{ background: tone, color }}><Icon size={16} /></span></div><div className="stat-value">{value}</div><div className="stat-bottom"><span>{note}</span></div></article>)}</section>
-    <div className="dashboard-grid">
-      <section className="panel"><div className="panel-heading"><div><div className="panel-title">Lead distribution by industry</div><div className="panel-description">Your lead database, by sector</div></div></div>
-        {industryCounts.length ? <div className="industry-list">{industryCounts.map(([name, count]) => <div className="industry-row" key={name}><span>{name}</span><div className="bar-track"><div className="bar-fill" style={{ width: `${Math.max(8, count / leads.length * 100)}%` }} /></div><span className="industry-count">{count}</span></div>)}</div> : <div className="empty-state">No lead data yet</div>}
-      </section>
-      <section className="panel"><div className="panel-heading"><div><div className="panel-title">Connector status</div><div className="panel-description">Data sources for lead discovery</div></div><button className="text-link" onClick={() => onNavigate("Settings")}>Manage <ChevronRight size={13} /></button></div><div className="connector-list">{[{ name: "Business directories", detail: "Connector not configured", icon: Building2 }, { name: "Company websites", detail: "Connector not configured", icon: Globe2 }, { name: "Search engine", detail: "Not configured", icon: Search }].map(({ name, detail, icon: Icon }) => <div className="connector-row" key={name}><span className="connector-logo"><Icon size={15} /></span><span className="connector-copy">{name}<small>{detail}</small></span><span className="connector-state"><span className="dot" /> &nbsp;Offline</span></div>)}</div></section>
-    </div>
-    <section className="panel"><div className="panel-heading"><div><div className="panel-title">Recent discoveries</div><div className="panel-description">Latest leads in your workspace</div></div><button className="text-link" onClick={() => onNavigate("Lead Database")}>View all leads <ChevronRight size={13} /></button></div>
-      {loading ? <div className="empty-state">Loading leads…</div> : leads.length ? <div className="recent-table-wrap"><table className="table"><thead><tr><th>Business / contact</th><th>Industry</th><th>Location</th><th>Score</th><th>Temperature</th></tr></thead><tbody>{leads.slice(0, 4).map((lead) => <tr key={lead.id}><td><div className="business-cell"><span className="business-mark">{lead.initials}</span><span>{lead.name}<small>{lead.contact}</small></span></div></td><td>{lead.industry}</td><td>{lead.location}</td><td className="score">{lead.score}</td><td><span className={`temperature ${lead.temperature.toLowerCase()}`}><span className="dot" />{lead.temperature}</span></td></tr>)}</tbody></table></div> : <div className="empty-state">No leads yet. Run a configured search or add leads to populate this table.</div>}
-    </section>
+  const [leads, setLeads] = useState<Lead[]>([]); const [activities, setActivities] = useState<Activity[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [greeting, setGreeting] = useState(""); const [refresh, setRefresh] = useState(0);
+  useEffect(() => { let active = true; setLoading(true); setError(""); Promise.all([listLeads(), listSearchHistory()]).then(([saved, history]) => { if (active) { setLeads(saved); setActivities(history as Activity[]); } }).catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : "Unable to load dashboard data."); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [refresh]);
+  useEffect(() => { const update = () => { const hour = new Date().getHours(); setGreeting(hour < 11 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"); }; update(); const timer = window.setInterval(update, 60000); return () => window.clearInterval(timer); }, []);
+  const stats = [{ label: "Total leads", count: leads.length, icon: Users }, ...LEAD_STATUSES.map((status, index) => ({ label: status, count: leads.filter((lead) => lead.status === status).length, icon: [Sparkles, ArrowUpRight, Users, Clock3, Flame, Building2, Users][index] }))];
+  const industries = [...leads.reduce((map, lead) => map.set(lead.industry || "Uncategorized", (map.get(lead.industry || "Uncategorized") ?? 0) + 1), new Map<string, number>()).entries()].sort((a, b) => b[1] - a[1]).slice(0, 7); const maxCount = Math.max(1, ...industries.map(([, count]) => count));
+  const date = (value?: string | null) => value && !Number.isNaN(Date.parse(value)) ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Date unavailable";
+  return <><div className="page-heading"><div><div className="eyebrow">YOUR SALES OVERVIEW</div><h1>{greeting}{displayName ? `, ${displayName}` : ""}</h1><p className="page-subtitle">A current view of your saved leads and discovery activity.</p></div><button className="btn btn-primary" type="button" onClick={() => onNavigate("Search Center")}><Search size={15} /> Find businesses</button></div>
+    {error && <div className="notice-box" role="alert"><span>{error}</span><button className="text-link" type="button" onClick={() => setRefresh((value) => value + 1)}>Try again</button></div>}
+    <section className="stats-grid dashboard-status-grid" aria-label="Lead metrics">{stats.map(({ label, count, icon: Icon }) => <article className="stat-card" key={label}><div className="stat-top"><span>{label}</span><span className="stat-icon"><Icon size={16} /></span></div><div className="stat-value" aria-live="polite">{loading ? "…" : count.toLocaleString()}</div><div className="stat-bottom">{label === "Total leads" ? "in your database" : "saved leads"}</div></article>)}</section>
+    <div className="dashboard-grid"><section className="panel"><div className="panel-heading"><div><div className="panel-title">Lead distribution by industry</div><div className="panel-description">Based on saved records only</div></div></div>{loading ? <div className="empty-state" role="status">Loading lead metrics…</div> : industries.length ? <div className="industry-list">{industries.map(([name, count]) => <div className="industry-row" key={name}><span>{name}</span><div className="bar-track"><div className="bar-fill" style={{ width: `${count / maxCount * 100}%` }} /></div><span className="industry-count">{count}</span></div>)}</div> : <div className="empty-state">No lead data to display yet.</div>}</section>
+      <section className="panel"><div className="panel-heading"><div><div className="panel-title">Discovery sources</div><div className="panel-description">Configured integrations</div></div></div><div className="connector-list"><div className="connector-row"><span className="connector-logo"><Globe2 size={15} /></span><span className="connector-copy">OpenStreetMap<small>Business discovery via Overpass</small></span><span className="connector-state">Available</span></div><div className="connector-row"><span className="connector-logo"><Search size={15} /></span><span className="connector-copy">Search history<small>{loading ? "Loading…" : `${activities.length} recorded searches`}</small></span><span className="connector-state">Supabase</span></div></div><div className="panel-heading"><button className="text-link" type="button" onClick={() => onNavigate("Search Center")}>Open Search Center <ArrowUpRight size={13} /></button></div></section></div>
+    <section className="panel" style={{ marginBottom: 17 }}><div className="panel-heading"><div><div className="panel-title">Recent search activity</div><div className="panel-description">Stored search history</div></div><button className="text-link" type="button" onClick={() => onNavigate("Search History")}>View history</button></div>{loading ? <div className="empty-state" role="status">Loading recent activity…</div> : activities.length ? <div className="activity-list">{activities.slice(0, 5).map((activity) => <div className="activity-row" key={activity.id}><span className="activity-indicator"/><span className="activity-copy"><strong>{activity.query || activity.industry || "Business search"}</strong><span>{[activity.industry, activity.location].filter(Boolean).join(" · ") || "Search criteria not recorded"}</span></span><time>{date(activity.created_at)}</time></div>)}</div> : <div className="empty-state">No search activity recorded yet.</div>}</section>
+    <section className="panel"><div className="panel-heading"><div><div className="panel-title">Recently added leads</div><div className="panel-description">Latest records from your database</div></div><button className="text-link" type="button" onClick={() => onNavigate("Lead Database")}>View all leads</button></div>{loading ? <div className="empty-state" role="status">Loading leads…</div> : leads.length ? <div className="recent-table-wrap"><table className="table"><thead><tr><th>Business</th><th>Industry</th><th>Location</th><th>Status</th><th>Source</th></tr></thead><tbody>{leads.slice(0, 6).map((lead) => <tr key={lead.id}><td><div className="business-cell"><span className="business-mark">{lead.initials}</span><span>{lead.name}<small>{lead.contact || "No contact details"}</small></span></div></td><td>{lead.industry}</td><td>{lead.location}</td><td>{lead.status}</td><td>{lead.source}</td></tr>)}</tbody></table></div> : <div className="empty-state">No leads saved yet. Search for businesses to get started.</div>}</section>
   </>;
 }

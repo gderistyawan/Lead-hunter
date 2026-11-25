@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { LanguageProvider } from "@/lib/language-context";
 import "./globals.css";
+import "./modern.css";
 
 export const metadata: Metadata = {
   title: "Lead Hunter AI · Sales Intelligence",
