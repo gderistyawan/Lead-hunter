@@ -1,6 +1,6 @@
 # LEAD HUNTER AI
 
-Initial frontend prototype for a universal, multi-industry sales intelligence and lead discovery platform.
+Lead Hunter AI is a Next.js application for discovering local businesses through OpenStreetMap and managing authenticated lead records with Supabase.
 
 ## Run locally
 
@@ -9,14 +9,14 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Configure the public Supabase URL and publishable key in your local environment. Never place service-role credentials in browser code. Supabase tables must have the owner-scoped Row Level Security policies required by `supabase/rls.sql`.
 
-## Prototype scope
+## Features
 
-- Next.js App Router, TypeScript, Tailwind CSS, and Lucide React.
-- Responsive dashboard, collapsible navigation, Search Center configuration, filterable lead database, search history, and settings views.
-- All dashboard and lead records are clearly identified as **DEMO** sample data.
-- Search submission intentionally does not make API calls or generate results. Connector states are placeholders.
-- No backend or external API integration is included. `lib/` holds frontend data and types separately from UI components, ready for a future Supabase/search-engine adapter.
+- Supabase-authenticated application access and real user-owned leads/search history.
+- OpenStreetMap Overpass business search with industry, location, result limit, contact filters, source attribution, and per-lead or multi-select saving.
+- Lead database status management, source/industry/status filters, deletion confirmation, and CSV export.
+- Search history from Supabase with refresh, loading/error/empty states, and pagination.
+- Dashboard counts and industry/activity summaries calculated from real database rows.
 
-The UI uses small in-project primitives and CSS styling inspired by shadcn/ui patterns; shadcn components can be added as the design system is expanded.
+The application does not fabricate business/contact records. OpenStreetMap is the only connected discovery provider; other integrations are explicitly shown as unavailable.

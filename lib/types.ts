@@ -1,5 +1,6 @@
 export type Temperature = "HOT" | "WARM" | "COLD";
-export type LeadStatus = "New" | "Contacted" | "Qualified";
+export type LeadStatus = "New" | "Contacted" | "Interested" | "Follow-up" | "Qualified" | "Converted" | "Lost";
+export const LEAD_STATUSES: LeadStatus[] = ["New", "Contacted", "Interested", "Follow-up", "Qualified", "Converted", "Lost"];
 
 export interface Lead {
   id: string;
