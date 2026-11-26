@@ -1,11 +1,16 @@
-import type { Lead } from "@/lib/types";
-import { getSupabase } from "@/lib/supabase";
+import type {
+  Lead,
+  LeadStatus,
+  DbLeadStatus,
+} from "@/lib/types";
 
-// =====================================================
-// DATABASE FIELD MAPPING
-// Supabase schema uses business_name, contact_name,
-// lead_score, lead_status, address, etc.
-// =====================================================
+import {
+  DB_LEAD_STATUSES,
+  fromDbLeadStatus,
+  toDbLeadStatus,
+} from "@/lib/types";
+
+import { getSupabase } from "@/lib/supabase";
 
 const LEAD_FIELDS = `
   id,
@@ -32,29 +37,6 @@ const LEAD_FIELDS = `
   updated_at
 `;
 
-type LeadDetails = Lead & {
-  phone?: string;
-  email?: string;
-  website?: string;
-  business_type?: string;
-  businessType?: string;
-  product_interest?: string;
-  productInterest?: string;
-  source_url?: string;
-  sourceUrl?: string;
-  notes?: string;
-  city?: string;
-  province?: string;
-  country?: string;
-  metadata?: Record<string, unknown>;
-  osmType?: string;
-  osmId?: number;
-  latitude?: number;
-  longitude?: number;
-  discoveryMethod?: string;
-  rawTags?: Record<string, string>;
-};
-
 type DatabaseLead = {
   id: string;
   business_name: string;
@@ -77,9 +59,11 @@ type DatabaseLead = {
   metadata: Record<string, unknown> | null;
 };
 
-// =====================================================
-// HELPERS
-// =====================================================
+export type LeadInput = Omit<Lead, "id"> & {
+  id?: string;
+};
+
+export type LeadChanges = Partial<Omit<Lead, "id">>;
 
 function throwIfError(error: { message: string } | null) {
   if (error) {
@@ -124,150 +108,108 @@ function getTemperature(
   score: number,
   metadata: Record<string, unknown>
 ): Lead["temperature"] {
-  const savedTemperature =
-    typeof metadata.temperature === "string"
-      ? metadata.temperature.toUpperCase()
-      : "";
+  const saved = metadata.temperature;
 
-  if (
-    savedTemperature === "HOT" ||
-    savedTemperature === "WARM" ||
-    savedTemperature === "COLD"
-  ) {
-    return savedTemperature;
+  if (saved === "HOT" || saved === "WARM" || saved === "COLD") {
+    return saved;
   }
 
-  if (score >= 75) {
-    return "HOT";
-  }
-
-  if (score >= 40) {
-    return "WARM";
-  }
+  if (score >= 75) return "HOT";
+  if (score >= 40) return "WARM";
 
   return "COLD";
 }
 
-// =====================================================
-// DATABASE -> APPLICATION FORMAT
-// =====================================================
+function getLeadStatus(value: string | null): LeadStatus {
+  const normalized = (value ?? "new") as DbLeadStatus;
+
+  if (DB_LEAD_STATUSES.includes(normalized)) {
+    return fromDbLeadStatus(normalized);
+  }
+
+  return "New";
+}
 
 function mapDatabaseLead(row: DatabaseLead): Lead {
   const metadata = row.metadata ?? {};
   const score = row.lead_score ?? 0;
-  const businessName = row.business_name ?? "";
+  const name = row.business_name ?? "";
 
   return {
     id: row.id,
-    name: businessName,
+    name,
     contact: row.contact_name ?? "",
     industry: row.industry ?? "",
     location: row.address ?? "",
     score,
     temperature: getTemperature(score, metadata),
     source: row.source ?? "",
-    status: row.lead_status ?? "LEAD",
-    initials: getInitials(businessName),
-  } as Lead;
+    status: getLeadStatus(row.lead_status),
+    initials:
+      typeof metadata.initials === "string"
+        ? metadata.initials
+        : getInitials(name),
+
+    phone: row.phone ?? undefined,
+    email: row.email ?? undefined,
+    website: row.website ?? undefined,
+
+    business_type: row.business_type ?? undefined,
+    product_interest: row.product_interest ?? undefined,
+    source_url: row.source_url ?? undefined,
+    notes: row.notes ?? undefined,
+
+    city: row.city ?? undefined,
+    province: row.province ?? undefined,
+    country: row.country ?? undefined,
+
+    osmType: metadata.osmType as Lead["osmType"],
+    osmId: metadata.osmId as number | undefined,
+    latitude: metadata.latitude as number | undefined,
+    longitude: metadata.longitude as number | undefined,
+    discoveryMethod: metadata.discoveryMethod as string | undefined,
+    rawTags: metadata.rawTags as Record<string, string> | undefined,
+
+    metadata,
+  };
 }
 
-// =====================================================
-// APPLICATION -> DATABASE FORMAT
-// =====================================================
-
 function mapLeadToDatabase(
-  lead: Partial<LeadDetails>
+  lead: Partial<Lead>
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
-  if ("name" in lead && lead.name !== undefined) {
-    result.business_name = lead.name;
+  if (lead.name !== undefined) result.business_name = lead.name;
+  if (lead.contact !== undefined) result.contact_name = lead.contact;
+  if (lead.industry !== undefined) result.industry = lead.industry;
+  if (lead.location !== undefined) result.address = lead.location;
+  if (lead.score !== undefined) result.lead_score = lead.score;
+  if (lead.status !== undefined) {
+    result.lead_status = toDbLeadStatus(lead.status);
   }
 
-  if ("contact" in lead && lead.contact !== undefined) {
-    result.contact_name = lead.contact;
-  }
+  if (lead.source !== undefined) result.source = lead.source;
+  if (lead.phone !== undefined) result.phone = lead.phone;
+  if (lead.email !== undefined) result.email = lead.email;
+  if (lead.website !== undefined) result.website = lead.website;
 
-  if ("industry" in lead && lead.industry !== undefined) {
-    result.industry = lead.industry;
-  }
-
-  if ("location" in lead && lead.location !== undefined) {
-    result.address = lead.location;
-  }
-
-  if ("score" in lead && lead.score !== undefined) {
-    result.lead_score = lead.score;
-  }
-
-  if ("status" in lead && lead.status !== undefined) {
-    result.lead_status = lead.status;
-  }
-
-  if ("source" in lead && lead.source !== undefined) {
-    result.source = lead.source;
-  }
-
-  if ("phone" in lead && lead.phone !== undefined) {
-    result.phone = lead.phone;
-  }
-
-  if ("email" in lead && lead.email !== undefined) {
-    result.email = lead.email;
-  }
-
-  if ("website" in lead && lead.website !== undefined) {
-    result.website = lead.website;
-  }
-
-  if (
-    "business_type" in lead &&
-    lead.business_type !== undefined
-  ) {
+  if (lead.business_type !== undefined) {
     result.business_type = lead.business_type;
-  } else if (
-    "businessType" in lead &&
-    lead.businessType !== undefined
-  ) {
-    result.business_type = lead.businessType;
   }
 
-  if (
-    "product_interest" in lead &&
-    lead.product_interest !== undefined
-  ) {
+  if (lead.product_interest !== undefined) {
     result.product_interest = lead.product_interest;
-  } else if (
-    "productInterest" in lead &&
-    lead.productInterest !== undefined
-  ) {
-    result.product_interest = lead.productInterest;
   }
 
-  if ("source_url" in lead && lead.source_url !== undefined) {
+  if (lead.source_url !== undefined) {
     result.source_url = lead.source_url;
-  } else if ("sourceUrl" in lead && lead.sourceUrl !== undefined) {
-    result.source_url = lead.sourceUrl;
   }
 
-  if ("city" in lead && lead.city !== undefined) {
-    result.city = lead.city;
-  }
+  if (lead.city !== undefined) result.city = lead.city;
+  if (lead.province !== undefined) result.province = lead.province;
+  if (lead.country !== undefined) result.country = lead.country;
+  if (lead.notes !== undefined) result.notes = lead.notes;
 
-  if ("province" in lead && lead.province !== undefined) {
-    result.province = lead.province;
-  }
-
-  if ("country" in lead && lead.country !== undefined) {
-    result.country = lead.country;
-  }
-
-  if ("notes" in lead && lead.notes !== undefined) {
-    result.notes = lead.notes;
-  }
-
-  // Fields not represented by dedicated database columns
-  // are preserved in the metadata JSONB column.
   const metadata: Record<string, unknown> = {
     ...(lead.metadata ?? {}),
   };
@@ -280,31 +222,16 @@ function mapLeadToDatabase(
     metadata.initials = lead.initials;
   }
 
-  const extra = lead as Partial<LeadDetails>;
+  if (lead.osmType !== undefined) metadata.osmType = lead.osmType;
+  if (lead.osmId !== undefined) metadata.osmId = lead.osmId;
+  if (lead.latitude !== undefined) metadata.latitude = lead.latitude;
+  if (lead.longitude !== undefined) metadata.longitude = lead.longitude;
 
-  if (extra.osmType !== undefined) {
-    metadata.osmType = extra.osmType;
+  if (lead.discoveryMethod !== undefined) {
+    metadata.discoveryMethod = lead.discoveryMethod;
   }
 
-  if (extra.osmId !== undefined) {
-    metadata.osmId = extra.osmId;
-  }
-
-  if (extra.latitude !== undefined) {
-    metadata.latitude = extra.latitude;
-  }
-
-  if (extra.longitude !== undefined) {
-    metadata.longitude = extra.longitude;
-  }
-
-  if (extra.discoveryMethod !== undefined) {
-    metadata.discoveryMethod = extra.discoveryMethod;
-  }
-
-  if (extra.rawTags !== undefined) {
-    metadata.rawTags = extra.rawTags;
-  }
+  if (lead.rawTags !== undefined) metadata.rawTags = lead.rawTags;
 
   if (Object.keys(metadata).length > 0) {
     result.metadata = metadata;
@@ -314,7 +241,7 @@ function mapLeadToDatabase(
 }
 
 // =====================================================
-// LIST LEADS
+// LEAD CRUD
 // =====================================================
 
 export async function listLeads(): Promise<Lead[]> {
@@ -330,25 +257,16 @@ export async function listLeads(): Promise<Lead[]> {
   );
 }
 
-// =====================================================
-// CREATE LEAD
-// =====================================================
-
-export async function createLead(
-  lead: Omit<Lead, "id"> & { id?: string }
-): Promise<Lead> {
+export async function createLead(lead: LeadInput): Promise<Lead> {
   const userId = await currentUserId();
 
-  const normalizedLead = lead as LeadDetails;
-
-  const businessName = normalizedLead.name?.trim() ?? "";
-  const businessLocation = normalizedLead.location?.trim() ?? "";
+  const businessName = lead.name.trim();
+  const businessLocation = lead.location.trim();
 
   if (!businessName) {
     throw new Error("Business name is required.");
   }
 
-  // Check duplicates using the actual Supabase column names.
   const { data: matches, error: lookupError } =
     await getSupabase()
       .from("leads")
@@ -373,7 +291,7 @@ export async function createLead(
   }
 
   const payload = {
-    ...mapLeadToDatabase(normalizedLead),
+    ...mapLeadToDatabase(lead),
     user_id: userId,
   };
 
@@ -388,19 +306,13 @@ export async function createLead(
   return mapDatabaseLead(data as unknown as DatabaseLead);
 }
 
-// =====================================================
-// UPDATE LEAD
-// =====================================================
-
 export async function updateLead(
   id: string,
-  changes: Partial<Omit<Lead, "id">>
+  changes: LeadChanges
 ): Promise<Lead> {
   const userId = await currentUserId();
 
-  const payload = mapLeadToDatabase(
-    changes as Partial<LeadDetails>
-  );
+  const payload = mapLeadToDatabase(changes);
 
   if (Object.keys(payload).length === 0) {
     throw new Error("No lead changes were provided.");
@@ -418,10 +330,6 @@ export async function updateLead(
 
   return mapDatabaseLead(data as unknown as DatabaseLead);
 }
-
-// =====================================================
-// DELETE LEAD
-// =====================================================
 
 export async function deleteLead(id: string): Promise<void> {
   const userId = await currentUserId();
@@ -459,13 +367,21 @@ export async function saveSearch(
 ) {
   const userId = await currentUserId();
 
+  const searchName =
+    name?.trim() ||
+    input.query.trim() ||
+    input.industry.trim() ||
+    input.location.trim() ||
+    "Untitled search";
+
   const { data, error } = await getSupabase()
     .from("saved_searches")
     .insert({
       user_id: userId,
-      name:
-        name ??
-        (input.query || input.industry || input.location),
+      name: searchName,
+      keyword: input.query,
+      industry: input.industry,
+      location: input.location,
       filters: input,
     })
     .select()
@@ -487,9 +403,7 @@ export async function listSavedSearches() {
   return data ?? [];
 }
 
-export async function deleteSavedSearch(
-  id: string
-): Promise<void> {
+export async function deleteSavedSearch(id: string): Promise<void> {
   const userId = await currentUserId();
 
   const { error } = await getSupabase()
@@ -512,10 +426,12 @@ export async function recordSearch(input: SearchInput) {
     .from("search_history")
     .insert({
       user_id: userId,
-      query: input.query,
+      keyword: input.query,
       industry: input.industry,
       location: input.location,
-      filters: input,
+      target_type: "business",
+      results_count: input.resultCount ?? 0,
+      search_filters: input,
     })
     .select()
     .single();
@@ -527,7 +443,7 @@ export async function recordSearch(input: SearchInput) {
 
 export async function listSearchHistory(limit = 100) {
   const safeLimit = Math.min(
-    Math.max(limit, 1),
+    Math.max(Math.floor(limit), 1),
     500
   );
 
