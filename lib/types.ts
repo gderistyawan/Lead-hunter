@@ -1,6 +1,5 @@
 export type Temperature = "HOT" | "WARM" | "COLD";
 
-// Status displayed in the application UI
 export type LeadStatus =
   | "New"
   | "Contacted"
@@ -10,7 +9,6 @@ export type LeadStatus =
   | "Converted"
   | "Lost";
 
-// Status stored in Supabase
 export type DbLeadStatus =
   | "new"
   | "contacted"
@@ -40,34 +38,32 @@ export const DB_LEAD_STATUSES: DbLeadStatus[] = [
   "rejected",
 ];
 
-// Convert application status to Supabase status
-export function toDbLeadStatus(status: LeadStatus): DbLeadStatus {
-  const mapping: Record<LeadStatus, DbLeadStatus> = {
-    New: "new",
-    Contacted: "contacted",
-    Interested: "interested",
-    "Follow-up": "follow_up",
-    Qualified: "qualified",
-    Converted: "converted",
-    Lost: "rejected",
-  };
+const TO_DB_STATUS: Record<LeadStatus, DbLeadStatus> = {
+  New: "new",
+  Contacted: "contacted",
+  Interested: "interested",
+  "Follow-up": "follow_up",
+  Qualified: "qualified",
+  Converted: "converted",
+  Lost: "rejected",
+};
 
-  return mapping[status];
+const FROM_DB_STATUS: Record<DbLeadStatus, LeadStatus> = {
+  new: "New",
+  contacted: "Contacted",
+  interested: "Interested",
+  follow_up: "Follow-up",
+  qualified: "Qualified",
+  converted: "Converted",
+  rejected: "Lost",
+};
+
+export function toDbLeadStatus(status: LeadStatus): DbLeadStatus {
+  return TO_DB_STATUS[status];
 }
 
-// Convert Supabase status to application status
 export function fromDbLeadStatus(status: DbLeadStatus): LeadStatus {
-  const mapping: Record<DbLeadStatus, LeadStatus> = {
-    new: "New",
-    contacted: "Contacted",
-    interested: "Interested",
-    follow_up: "Follow-up",
-    qualified: "Qualified",
-    converted: "Converted",
-    rejected: "Lost",
-  };
-
-  return mapping[status];
+  return FROM_DB_STATUS[status];
 }
 
 export interface Lead {
@@ -81,6 +77,28 @@ export interface Lead {
   source: string;
   status: LeadStatus;
   initials: string;
+
+  phone?: string;
+  email?: string;
+  website?: string;
+
+  business_type?: string;
+  product_interest?: string;
+  source_url?: string;
+  notes?: string;
+
+  city?: string;
+  province?: string;
+  country?: string;
+
+  osmType?: "node" | "way" | "relation";
+  osmId?: number;
+  latitude?: number;
+  longitude?: number;
+  discoveryMethod?: string;
+  rawTags?: Record<string, string>;
+
+  metadata?: Record<string, unknown>;
 }
 
 export type AppPage =
