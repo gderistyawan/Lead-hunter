@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+
 import {
   AlertCircle,
   Building2,
@@ -11,12 +12,17 @@ import {
   Sparkles,
 } from "lucide-react";
 
-import { createLead, recordSearch } from "@/lib/database";
+import {
+  createLead,
+  recordSearch,
+} from "@/lib/database";
+
 import {
   osmErrorMessage,
   searchOpenStreetMap,
   type OSMLead,
 } from "@/lib/osm-search";
+
 import type { Lead } from "@/lib/types";
 import { useLanguage } from "@/lib/language-context";
 
@@ -45,16 +51,21 @@ type ContactFilter = (typeof contactOptions)[number];
 export function SearchCenterView() {
   const { language } = useLanguage();
 
+  const isIndonesian = language === "id";
+
   const [industry, setIndustry] = useState("");
   const [location, setLocation] = useState("");
   const [query, setQuery] = useState("");
   const [maxResults, setMaxResults] = useState("50");
 
   const [includeContacts, setIncludeContacts] = useState(true);
+
   const [contactFilter, setContactFilter] =
     useState<ContactFilter>("All results");
 
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   const [results, setResults] = useState<OSMLead[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [saved, setSaved] = useState<string[]>([]);
@@ -69,12 +80,48 @@ export function SearchCenterView() {
   function errorText(value: unknown): string {
     return osmErrorMessage(
       value,
-      language === "id" ? "id" : "en"
+      isIndonesian ? "id" : "en"
     );
   }
 
+  function toLead(item: OSMLead): Omit<Lead, "id"> {
+    const contactDetails = [
+      item.phone && `Phone: ${item.phone}`,
+      item.email && `Email: ${item.email}`,
+      item.website && `Website: ${item.website}`,
+    ].filter(Boolean);
+
+    return {
+      name: item.name,
+      contact: includeContacts
+        ? contactDetails.join(" · ")
+        : "",
+
+      industry: item.industry,
+      location: item.location,
+      score: item.score,
+      temperature: item.temperature,
+      source: item.source,
+      status: "New",
+      initials: item.initials,
+
+      phone: includeContacts ? item.phone : undefined,
+      email: includeContacts ? item.email : undefined,
+      website: includeContacts ? item.website : undefined,
+
+      source_url: item.sourceUrl,
+
+      osmType: item.osmType,
+      osmId: item.osmId,
+      latitude: item.latitude,
+      longitude: item.longitude,
+      discoveryMethod: item.discoveryMethod,
+      rawTags: item.rawTags,
+    };
+  }
+
   async function search() {
-    if (loading) return;
+    if (loading || saving) return;
 
     setError("");
     setMessage("");
@@ -82,9 +129,7 @@ export function SearchCenterView() {
     const cleanLocation = location.trim();
 
     if (!cleanLocation) {
-      setError(
-        errorText(new Error("OSM_LOCATION_REQUIRED"))
-      );
+      setError(errorText(new Error("OSM_LOCATION_REQUIRED")));
       return;
     }
 
@@ -92,12 +137,13 @@ export function SearchCenterView() {
 
     if (
       !Number.isFinite(resultLimit) ||
-      resultLimit < 1
+      resultLimit < 1 ||
+      resultLimit > 100
     ) {
       setError(
-        language === "id"
-          ? "Jumlah hasil pencarian tidak valid."
-          : "Invalid maximum results value."
+        isIndonesian
+          ? "Jumlah hasil pencarian harus antara 1 sampai 100."
+          : "Maximum results must be between 1 and 100."
       );
       return;
     }
@@ -117,8 +163,6 @@ export function SearchCenterView() {
 
       setResults(found);
 
-      // Search history is optional.
-      // A history failure should not invalidate search results.
       try {
         await recordSearch({
           query: query.trim(),
@@ -134,19 +178,25 @@ export function SearchCenterView() {
           "Could not save search history:",
           historyError
         );
+
+        setMessage(
+          isIndonesian
+            ? "Hasil pencarian ditemukan, tetapi riwayat belum berhasil disimpan."
+            : "Results found, but search history could not be saved."
+        );
       }
 
       if (found.length === 0) {
         setMessage(
-          language === "id"
+          isIndonesian
             ? "Tidak ada bisnis yang cocok. Coba lokasi lebih luas atau kata kunci lain."
-            : "No matching businesses found. Try a broader location or different keywords."
+            : "No matching businesses found. Try a broader location."
         );
-      } else {
+      } else if (!message) {
         setMessage(
-          language === "id"
+          isIndonesian
             ? `${found.length} bisnis berhasil ditemukan.`
-            : `${found.length} businesses found successfully.`
+            : `${found.length} businesses found.`
         );
       }
     } catch (cause) {
@@ -172,94 +222,85 @@ export function SearchCenterView() {
     return true;
   });
 
-  function toLead(item: OSMLead): Omit<Lead, "id"> {
-    const contactDetails = [
-      item.phone && `Phone: ${item.phone}`,
-      item.email && `Email: ${item.email}`,
-      item.website && `Website: ${item.website}`,
-    ].filter(Boolean);
-
-    return {
-      name: item.name,
-      contact: includeContacts
-        ? contactDetails.join(" · ")
-        : "",
-      industry: item.industry,
-      location: item.location,
-      score: item.score,
-      temperature: item.temperature,
-      source: item.source,
-      status: "New",
-      initials: item.initials,
-    };
-  }
-
   async function save(items: OSMLead[]) {
+    if (saving) return;
+
     const pending = items.filter(
       (item) => !saved.includes(keyOf(item))
     );
 
-    if (pending.length === 0) {
-      return;
-    }
+    if (pending.length === 0) return;
 
     setError("");
     setMessage("");
+    setSaving(true);
 
     let count = 0;
     let duplicateCount = 0;
 
     const failures: string[] = [];
 
-    for (const item of pending) {
-      try {
-        await createLead(toLead(item));
+    try {
+      for (const item of pending) {
+        try {
+          await createLead(toLead(item));
 
-        setSaved((current) =>
-          current.includes(keyOf(item))
-            ? current
-            : [...current, keyOf(item)]
-        );
-
-        count++;
-      } catch (cause) {
-        const errorMessage =
-          cause instanceof Error
-            ? cause.message
-            : "";
-
-        if (
-          errorMessage.includes(
-            "already in your lead database"
-          )
-        ) {
           setSaved((current) =>
             current.includes(keyOf(item))
               ? current
               : [...current, keyOf(item)]
           );
 
-          duplicateCount++;
-        } else {
-          failures.push(
+          count++;
+        } catch (cause) {
+          const errorMessage =
             cause instanceof Error
-              ? `${item.name}: ${cause.message}`
-              : `${item.name}: Unknown error`
-          );
+              ? cause.message
+              : "";
+
+          if (
+            errorMessage.includes(
+              "already in your lead database"
+            )
+          ) {
+            setSaved((current) =>
+              current.includes(keyOf(item))
+                ? current
+                : [...current, keyOf(item)]
+            );
+
+            duplicateCount++;
+          } else {
+            failures.push(
+              `${item.name}: ${
+                cause instanceof Error
+                  ? cause.message
+                  : "Unknown error"
+              }`
+            );
+          }
         }
       }
-    }
 
-    if (count > 0 || duplicateCount > 0) {
-      setMessage(
-        language === "id"
-          ? `${count} lead berhasil disimpan. ${duplicateCount > 0 ? `${duplicateCount} lead sudah ada di database.` : ""}`
-          : `${count} lead saved successfully. ${duplicateCount > 0 ? `${duplicateCount} lead(s) already existed.` : ""}`
+      if (count > 0 || duplicateCount > 0) {
+        setMessage(
+          isIndonesian
+            ? `${count} lead berhasil disimpan. ${duplicateCount} lead sudah ada sebelumnya.`
+            : `${count} leads saved. ${duplicateCount} already existed.`
+        );
+      }
+
+      if (failures.length > 0) {
+        setError(failures.slice(0, 3).join(" · "));
+      }
+
+      setSelected((current) =>
+        current.filter(
+          (key) => !pending.some((item) => keyOf(item) === key && saved.includes(key))
+        )
       );
-    }
-
-    if (failures.length > 0) {
-      setError(failures.slice(0, 3).join(" · "));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -271,10 +312,7 @@ export function SearchCenterView() {
     );
   }
 
-  function toggleSelected(
-    key: string,
-    checked: boolean
-  ) {
+  function toggleSelected(key: string, checked: boolean) {
     setSelected((current) => {
       if (checked) {
         return current.includes(key)
@@ -332,8 +370,7 @@ export function SearchCenterView() {
 
             <p>
               Search by keyword, industry, and location.
-              Try “Bali, Indonesia” or a specific city
-              such as Denpasar.
+              Try “Bali, Indonesia” or “Denpasar, Bali”.
             </p>
           </div>
 
@@ -349,19 +386,14 @@ export function SearchCenterView() {
               id="search-description"
               className="field"
               value={query}
-              onChange={(event) =>
-                setQuery(event.target.value)
-              }
+              onChange={(event) => setQuery(event.target.value)}
               placeholder="e.g. hotel, restaurant, coffee shop"
             />
           </div>
 
           <div className="form-row">
             <div className="form-group">
-              <label
-                className="form-label"
-                htmlFor="industry"
-              >
+              <label className="form-label" htmlFor="industry">
                 Industry
               </label>
 
@@ -372,9 +404,7 @@ export function SearchCenterView() {
                   id="industry"
                   className="field"
                   value={industry}
-                  onChange={(event) =>
-                    setIndustry(event.target.value)
-                  }
+                  onChange={(event) => setIndustry(event.target.value)}
                 >
                   <option value="">Any industry</option>
 
@@ -388,10 +418,7 @@ export function SearchCenterView() {
             </div>
 
             <div className="form-group">
-              <label
-                className="form-label"
-                htmlFor="location"
-              >
+              <label className="form-label" htmlFor="location">
                 Location
               </label>
 
@@ -402,9 +429,7 @@ export function SearchCenterView() {
                   id="location"
                   className="field"
                   value={location}
-                  onChange={(event) =>
-                    setLocation(event.target.value)
-                  }
+                  onChange={(event) => setLocation(event.target.value)}
                   placeholder="Bali, Indonesia or Denpasar, Bali"
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
@@ -418,21 +443,18 @@ export function SearchCenterView() {
 
           <div className="search-submit-row">
             <span className="helper-note">
-              Results contain only information present in
-              OpenStreetMap.
+              Results contain only information present in OpenStreetMap.
             </span>
 
             <button
               className="btn btn-primary"
               type="button"
               onClick={() => void search()}
-              disabled={loading}
+              disabled={loading || saving}
             >
               <Search size={15} />
 
-              {loading
-                ? "Searching OpenStreetMap…"
-                : "Search businesses"}
+              {loading ? "Searching OpenStreetMap…" : "Search businesses"}
             </button>
           </div>
 
@@ -462,19 +484,14 @@ export function SearchCenterView() {
               RESULT PREFERENCES
             </div>
 
-            <label
-              className="config-line"
-              htmlFor="max-results"
-            >
+            <label className="config-line" htmlFor="max-results">
               <span>Maximum results</span>
 
               <select
                 id="max-results"
                 className="field compact-field"
                 value={maxResults}
-                onChange={(event) =>
-                  setMaxResults(event.target.value)
-                }
+                onChange={(event) => setMaxResults(event.target.value)}
               >
                 <option value="25">25</option>
                 <option value="50">50</option>
@@ -490,19 +507,12 @@ export function SearchCenterView() {
                 role="switch"
                 aria-checked={includeContacts}
                 aria-label="Include contact fields"
-                className={`switch ${
-                  includeContacts ? "on" : ""
-                }`}
-                onClick={() =>
-                  setIncludeContacts((value) => !value)
-                }
+                className={`switch ${includeContacts ? "on" : ""}`}
+                onClick={() => setIncludeContacts((value) => !value)}
               />
             </div>
 
-            <label
-              className="config-line"
-              htmlFor="contact-filter"
-            >
+            <label className="config-line" htmlFor="contact-filter">
               <span>Contact availability</span>
 
               <select
@@ -510,9 +520,7 @@ export function SearchCenterView() {
                 className="field compact-field"
                 value={contactFilter}
                 onChange={(event) =>
-                  setContactFilter(
-                    event.target.value as ContactFilter
-                  )
+                  setContactFilter(event.target.value as ContactFilter)
                 }
               >
                 {contactOptions.map((option) => (
@@ -529,16 +537,12 @@ export function SearchCenterView() {
 
             <div className="config-line">
               <span>OpenStreetMap</span>
-              <strong className="config-value">
-                Connected
-              </strong>
+              <strong className="config-value">Connected</strong>
             </div>
 
             <div className="config-line">
               <span>Company websites</span>
-              <span className="config-value">
-                Not connected
-              </span>
+              <span className="config-value">Not connected</span>
             </div>
           </div>
 
@@ -560,8 +564,7 @@ export function SearchCenterView() {
               </div>
 
               <div className="panel-description">
-                Select any records to save them in your lead
-                database.
+                Select records to save them in your lead database.
               </div>
             </div>
 
@@ -570,6 +573,7 @@ export function SearchCenterView() {
                 className="btn"
                 type="button"
                 onClick={selectAvailable}
+                disabled={saving}
               >
                 Select available
               </button>
@@ -577,7 +581,7 @@ export function SearchCenterView() {
               <button
                 className="btn btn-primary"
                 type="button"
-                disabled={selected.length === 0}
+                disabled={selected.length === 0 || saving}
                 onClick={() =>
                   void save(
                     visible.filter((item) =>
@@ -586,7 +590,7 @@ export function SearchCenterView() {
                   )
                 }
               >
-                Save selected ({selected.length})
+                {saving ? "Saving…" : `Save selected (${selected.length})`}
               </button>
             </div>
           </div>
@@ -595,7 +599,7 @@ export function SearchCenterView() {
             <div className="notice-box">
               <AlertCircle size={15} />
               <span>
-                {language === "id"
+                {isIndonesian
                   ? "Tidak ada hasil yang sesuai dengan filter kontak."
                   : "No results match the selected contact filter."}
               </span>
@@ -623,12 +627,9 @@ export function SearchCenterView() {
                           type="checkbox"
                           aria-label={`Select ${lead.name}`}
                           checked={selected.includes(key)}
-                          disabled={isSaved}
+                          disabled={isSaved || saving}
                           onChange={(event) =>
-                            toggleSelected(
-                              key,
-                              event.target.checked
-                            )
+                            toggleSelected(key, event.target.checked)
                           }
                         />
                       </label>
@@ -646,8 +647,7 @@ export function SearchCenterView() {
 
                     {lead.phone && includeContacts && (
                       <p>
-                        <strong>Phone:</strong>{" "}
-                        {lead.phone}
+                        <strong>Phone:</strong> {lead.phone}
                       </p>
                     )}
 
@@ -692,7 +692,7 @@ export function SearchCenterView() {
                       <button
                         type="button"
                         className="btn"
-                        disabled={isSaved}
+                        disabled={isSaved || saving}
                         onClick={() => void save([lead])}
                       >
                         {isSaved ? (
