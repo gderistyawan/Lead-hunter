@@ -50,14 +50,12 @@ const cache = new Map<
 const tagPatterns: Array<{
   pattern: RegExp;
   selectors: string[];
-  category: string;
 }> = [
   {
     pattern: /hotel|hostel|motel|resort|guest.?house|accommodation|penginapan/i,
     selectors: [
       '["tourism"~"hotel|motel|hostel|guest_house|resort|chalet|apartment|camp_site",i]',
     ],
-    category: "tourism",
   },
   {
     pattern: /restaurant|food|dining|warung|eatery/i,
@@ -65,7 +63,6 @@ const tagPatterns: Array<{
       '["amenity"~"restaurant|cafe|fast_food|food_court",i]',
       '["shop"="bakery"]',
     ],
-    category: "amenity",
   },
   {
     pattern: /cafe|coffee|kopi/i,
@@ -73,27 +70,22 @@ const tagPatterns: Array<{
       '["amenity"~"cafe|ice_cream",i]',
       '["shop"~"coffee|tea",i]',
     ],
-    category: "amenity",
   },
   {
     pattern: /bar|pub|night.?club/i,
     selectors: ['["amenity"~"bar|pub|nightclub",i]'],
-    category: "amenity",
   },
   {
     pattern: /shop|retail|store|market|toko/i,
     selectors: ['["shop"]'],
-    category: "shop",
   },
   {
     pattern: /office|agency|consult/i,
     selectors: ['["office"]'],
-    category: "office",
   },
   {
     pattern: /craft|artisan/i,
     selectors: ['["craft"]'],
-    category: "craft",
   },
   {
     pattern: /factory|industrial|manufactur/i,
@@ -101,7 +93,6 @@ const tagPatterns: Array<{
       '["landuse"="industrial"]',
       '["building"~"industrial|warehouse|manufacture",i]',
     ],
-    category: "industrial",
   },
   {
     pattern: /tourism|attraction|museum|spa|beach|park/i,
@@ -109,7 +100,6 @@ const tagPatterns: Array<{
       '["tourism"]',
       '["leisure"~"park|garden|sports_centre|water_park",i]',
     ],
-    category: "tourism",
   },
 ];
 
@@ -123,9 +113,6 @@ const generalSelectors = [
   '["building"~"commercial|retail|industrial|warehouse|hotel",i]',
 ];
 
-/**
- * Escape text before inserting it into an Overpass regular expression.
- */
 function escapeOverpass(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -154,10 +141,11 @@ function areaSearchName(location: string): string {
   const countryNames =
     /^(indonesia|id|usa|united states|uk|united kingdom)$/i;
 
-  return (
-    [...tokens].reverse().find((part) => !countryNames.test(part)) ??
-    location.trim()
+  const areaTokens = tokens.filter(
+    (part) => !countryNames.test(part)
   );
+
+  return areaTokens[0] ?? location.trim();
 }
 
 function buildQuery(
@@ -179,7 +167,6 @@ function buildQuery(
     ? matched.flatMap(({ selectors: choices }) => choices)
     : generalSelectors;
 
-  // Escape each term separately so the | remains an OR operator.
   const namePattern = terms.map(escapeOverpass).join("|");
 
   const nameSelector = namePattern
@@ -210,27 +197,19 @@ function addressFromTags(
   tags: Record<string, string>,
   fallback: string
 ): string {
-  const full = tags["addr:full"];
-
-  if (full) {
-    return full;
-  }
+  if (tags["addr:full"]) return tags["addr:full"];
 
   const street = [
     tags["addr:housenumber"],
     tags["addr:street"],
-  ]
-    .filter(Boolean)
-    .join(" ");
+  ].filter(Boolean).join(" ");
 
   const locality = [
     tags["addr:suburb"],
     tags["addr:city"],
     tags["addr:state"],
     tags["addr:postcode"],
-  ]
-    .filter(Boolean)
-    .join(", ");
+  ].filter(Boolean).join(", ");
 
   return [street, locality].filter(Boolean).join(", ") || fallback;
 }
@@ -250,9 +229,7 @@ function categoryFromTags(
     "building",
     "leisure",
   ]) {
-    if (tags[key]) {
-      return tags[key].replace(/_/g, " ");
-    }
+    if (tags[key]) return tags[key].replace(/_/g, " ");
   }
 
   return requestedIndustry.trim() || requestedTerms[0] || "Business";
@@ -267,9 +244,7 @@ function hasRequestedCategory(
 ): boolean {
   const terms = termsFor(input);
 
-  if (terms.length === 0) {
-    return true;
-  }
+  if (terms.length === 0) return true;
 
   const pattern = tagPatterns.find(({ pattern }) =>
     pattern.test(terms.join(" "))
@@ -289,16 +264,12 @@ function hasRequestedCategory(
   const searchable = [
     tags.name ?? "",
     ...Object.entries(tags).map(([key, value]) => `${key} ${value}`),
-  ]
-    .join(" ")
-    .toLowerCase();
+  ].join(" ").toLowerCase();
 
-  return terms.some((term) =>
-    searchable.includes(term.toLowerCase())
-  );
+  return terms.some((term) => searchable.includes(term.toLowerCase()));
 }
 
-function normalize(
+function normalizeElement(
   element: OverpassElement,
   location: string,
   input: {
@@ -309,9 +280,7 @@ function normalize(
   const tags = element.tags ?? {};
   const name = tags.name?.trim();
 
-  if (!name) {
-    return null;
-  }
+  if (!name) return null;
 
   const latitude = element.lat ?? element.center?.lat;
   const longitude = element.lon ?? element.center?.lon;
@@ -343,13 +312,14 @@ function normalize(
     website && `Website: ${website}`,
   ].filter(Boolean);
 
-  const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
+  const sourceUrl =
+    `https://www.openstreetmap.org/${element.type}/${element.id}`;
 
   const address = addressFromTags(tags, location);
 
   const completeness = [
     tags.name,
-    address && address !== location,
+    address !== location ? address : undefined,
     website,
     phone,
     email,
@@ -390,6 +360,7 @@ function normalize(
     email,
 
     sourceUrl,
+    source_url: sourceUrl,
     discoveryMethod: "OpenStreetMap Overpass",
     rawTags: tags,
   };
@@ -409,9 +380,7 @@ async function requestOverpass(
           "Content-Type":
             "application/x-www-form-urlencoded;charset=UTF-8",
         },
-        body: new URLSearchParams({
-          data: query,
-        }).toString(),
+        body: new URLSearchParams({ data: query }).toString(),
         signal,
         cache: "no-store",
       });
@@ -497,17 +466,13 @@ export async function searchOpenStreetMap(input: {
     return cached.value;
   }
 
-  const query = buildQuery(
-    location,
-    normalizedInput,
-    maxResults
-  );
-
+  const query = buildQuery(location, normalizedInput, maxResults);
   const controller = new AbortController();
 
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    REQUEST_TIMEOUT_MS
+  );
 
   try {
     const response = await requestOverpass(
@@ -522,21 +487,17 @@ export async function searchOpenStreetMap(input: {
     const unique = new Map<string, OSMLead>();
 
     for (const element of response.elements ?? []) {
-      const tags = element.tags ?? {};
-
-      if (!hasRequestedCategory(tags, normalizedInput)) {
+      if (!hasRequestedCategory(element.tags ?? {}, normalizedInput)) {
         continue;
       }
 
-      const lead = normalize(
+      const lead = normalizeElement(
         element,
         location,
         normalizedInput
       );
 
-      if (!lead) {
-        continue;
-      }
+      if (!lead) continue;
 
       const uniqueKey = `${element.type}/${element.id}`;
 
@@ -562,49 +523,32 @@ export function osmErrorMessage(
   error: unknown,
   language: "en" | "id"
 ): string {
-  const code =
-    error instanceof Error ? error.message : "";
+  const code = error instanceof Error ? error.message : "";
 
   const messages = {
     en: {
-      OSM_LOCATION_REQUIRED:
-        "Enter a location for the OpenStreetMap search.",
-      OSM_RATE_LIMIT:
-        "OpenStreetMap is rate-limiting requests. Please wait a moment and try again.",
-      OSM_TIMEOUT:
-        "OpenStreetMap search timed out. Try a smaller area or retry shortly.",
-      OSM_QUERY_REJECTED:
-        "OpenStreetMap could not process this search. Try a more specific location.",
-      OSM_INVALID_RESPONSE:
-        "OpenStreetMap returned an unexpected response.",
-      OSM_UNAVAILABLE:
-        "OpenStreetMap search is temporarily unavailable. Please try again later.",
-      OSM_NETWORK_ERROR:
-        "Could not reach OpenStreetMap. Check your connection and try again.",
+      OSM_LOCATION_REQUIRED: "Enter a location for the OpenStreetMap search.",
+      OSM_RATE_LIMIT: "OpenStreetMap is rate-limiting requests. Please wait and try again.",
+      OSM_TIMEOUT: "OpenStreetMap search timed out. Try a smaller area.",
+      OSM_QUERY_REJECTED: "OpenStreetMap could not process this search.",
+      OSM_INVALID_RESPONSE: "OpenStreetMap returned an unexpected response.",
+      OSM_UNAVAILABLE: "OpenStreetMap search is temporarily unavailable.",
+      OSM_NETWORK_ERROR: "Could not reach OpenStreetMap. Check your connection.",
     },
     id: {
-      OSM_LOCATION_REQUIRED:
-        "Masukkan lokasi untuk pencarian OpenStreetMap.",
-      OSM_RATE_LIMIT:
-        "OpenStreetMap membatasi permintaan. Tunggu sebentar lalu coba lagi.",
-      OSM_TIMEOUT:
-        "Pencarian OpenStreetMap kehabisan waktu. Coba area lebih kecil atau ulangi sebentar lagi.",
-      OSM_QUERY_REJECTED:
-        "OpenStreetMap tidak dapat memproses pencarian ini. Coba lokasi yang lebih spesifik.",
-      OSM_INVALID_RESPONSE:
-        "OpenStreetMap memberikan respons yang tidak dikenali.",
-      OSM_UNAVAILABLE:
-        "Pencarian OpenStreetMap sementara tidak tersedia. Coba lagi nanti.",
-      OSM_NETWORK_ERROR:
-        "Tidak dapat terhubung ke OpenStreetMap. Periksa koneksi Anda lalu coba lagi.",
+      OSM_LOCATION_REQUIRED: "Masukkan lokasi untuk pencarian OpenStreetMap.",
+      OSM_RATE_LIMIT: "OpenStreetMap membatasi permintaan. Tunggu sebentar lalu coba lagi.",
+      OSM_TIMEOUT: "Pencarian OpenStreetMap kehabisan waktu. Coba area lebih kecil.",
+      OSM_QUERY_REJECTED: "OpenStreetMap tidak dapat memproses pencarian ini.",
+      OSM_INVALID_RESPONSE: "OpenStreetMap memberikan respons yang tidak dikenali.",
+      OSM_UNAVAILABLE: "Pencarian OpenStreetMap sementara tidak tersedia.",
+      OSM_NETWORK_ERROR: "Tidak dapat terhubung ke OpenStreetMap. Periksa koneksi.",
     },
   } as const;
 
-  const languageMessages = messages[language];
-
   return (
-    languageMessages[
-      code as keyof typeof languageMessages
+    messages[language][
+      code as keyof typeof messages.en
     ] ??
     (language === "id"
       ? "Pencarian gagal. Silakan coba lagi."
