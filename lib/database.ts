@@ -51,7 +51,6 @@ type LeadDetails = Lead & {
   osmId?: number;
   latitude?: number;
   longitude?: number;
-  sourceUrl?: string;
   discoveryMethod?: string;
   rawTags?: Record<string, string>;
 };
@@ -125,25 +124,28 @@ function getTemperature(
   score: number,
   metadata: Record<string, unknown>
 ): Lead["temperature"] {
-  const savedTemperature = metadata.temperature;
+  const savedTemperature =
+    typeof metadata.temperature === "string"
+      ? metadata.temperature.toUpperCase()
+      : "";
 
   if (
-    savedTemperature === "hot" ||
-    savedTemperature === "warm" ||
-    savedTemperature === "cold"
+    savedTemperature === "HOT" ||
+    savedTemperature === "WARM" ||
+    savedTemperature === "COLD"
   ) {
-    return savedTemperature as Lead["temperature"];
+    return savedTemperature;
   }
 
   if (score >= 75) {
-    return "hot" as Lead["temperature"];
+    return "HOT";
   }
 
   if (score >= 40) {
-    return "warm" as Lead["temperature"];
+    return "WARM";
   }
 
-  return "cold" as Lead["temperature"];
+  return "COLD";
 }
 
 // =====================================================
